@@ -1,0 +1,522 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters": {
+    "KeyName": {
+      "Type": "String",
+      "Description": "KeyName to use with LaunchConfiguration resource",
+      "Default": "SparkleKey"
+    },
+    "DbWebSecurityGroupIngressPort": {
+      "Type": "Number",
+      "Description": "The port number for the SecurityGroupIngress rule",
+      "Default": "3306"
+    },
+    "DbWebSecurityGroupIngressIpProtocol": {
+      "Type": "String",
+      "Description": "The IpProtocol for the SecurityGroupIngress rule",
+      "Default": "tcp"
+    },
+    "WebPublicSecurityGroupIngressPort": {
+      "Type": "Number",
+      "Description": "The port number for the SecurityGroupIngress rule",
+      "Default": "80"
+    },
+    "WebPublicSecurityGroupIngressIpProtocol": {
+      "Type": "String",
+      "Description": "The IpProtocol for the SecurityGroupIngress rule",
+      "Default": "tcp"
+    },
+    "DbLaunchConfigurationImageId": {
+      "Type": "String",
+      "Description": "ImageID for the LaunchConfiguration resource",
+      "Default": "ami-9abea4fb"
+    },
+    "DbLaunchConfigurationInstanceType": {
+      "Type": "String",
+      "Description": "InstanceType for the LaunchConfiguration resource",
+      "Default": "t2.micro"
+    },
+    "WebLaunchConfigurationImageId": {
+      "Type": "String",
+      "Description": "ImageID for the LaunchConfiguration resource",
+      "Default": "ami-9abea4fb"
+    },
+    "WebLaunchConfigurationInstanceType": {
+      "Type": "String",
+      "Description": "InstanceType for the LaunchConfiguration resource",
+      "Default": "t2.micro"
+    },
+    "DbAutoScalingGroupSize": {
+      "Type": "Number",
+      "Description": "Number of desired nodes for the AutoScalingGroup resource",
+      "Default": 1
+    },
+    "WebAutoScalingGroupSize": {
+      "Type": "Number",
+      "Description": "Number of desired nodes for the AutoScalingGroup resource",
+      "Default": 1
+    },
+    "WebAutoScalingGroupLoadBalancerResourceName": {
+      "Type": "String",
+      "Description": "The ELB resource name to associate this AutoScalingGroup with",
+      "Default": "SparkleTe-WebLoadB-1KL1J6RMEBE6C"
+    }
+  },
+  "Resources": {
+    "CfnUser": {
+      "Type": "AWS::IAM::User",
+      "Properties": {
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "cfn_access",
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "cloudformation:DescribeStackResource",
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "CfnKeys": {
+      "Type": "AWS::IAM::AccessKey",
+      "Properties": {
+        "UserName": {
+          "Ref": "CfnUser"
+        }
+      }
+    },
+    "DbSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security group for db stack"
+      }
+    },
+    "DbSecurityGroupSshIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "FromPort": 22,
+        "ToPort": 22,
+        "IpProtocol": "tcp",
+        "GroupName": {
+          "Ref": "DbSecurityGroup"
+        },
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "WebSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security group for web stack"
+      }
+    },
+    "WebSecurityGroupSshIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "FromPort": 22,
+        "ToPort": 22,
+        "IpProtocol": "tcp",
+        "GroupName": {
+          "Ref": "WebSecurityGroup"
+        },
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "DbWebSecurityGroupIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "FromPort": {
+          "Ref": "DbWebSecurityGroupIngressPort"
+        },
+        "ToPort": {
+          "Ref": "DbWebSecurityGroupIngressPort"
+        },
+        "IpProtocol": {
+          "Ref": "DbWebSecurityGroupIngressIpProtocol"
+        },
+        "GroupName": {
+          "Ref": "DbSecurityGroup"
+        },
+        "SourceSecurityGroupName": {
+          "Ref": "WebSecurityGroup"
+        }
+      }
+    },
+    "WebPublicSecurityGroupIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "FromPort": {
+          "Ref": "WebPublicSecurityGroupIngressPort"
+        },
+        "ToPort": {
+          "Ref": "WebPublicSecurityGroupIngressPort"
+        },
+        "IpProtocol": {
+          "Ref": "WebPublicSecurityGroupIngressIpProtocol"
+        },
+        "GroupName": {
+          "Ref": "WebSecurityGroup"
+        },
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "DbLaunchConfiguration": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "ImageId": {
+          "Ref": "DbLaunchConfigurationImageId"
+        },
+        "InstanceType": {
+          "Ref": "DbLaunchConfigurationInstanceType"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "DbSecurityGroup"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "apt-get update\n",
+                "apt-get -y install python-setuptools\n",
+                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                "cfn-init -v --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " -s ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " -r DbLaunchConfiguration",
+                "\n",
+                "cfn-signal -e $? --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " --resource ",
+                "DbAutoScalingGroup",
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "default": [
+              "update",
+              "mysql_install"
+            ]
+          },
+          "update": {
+            "commands": {
+              "00_get_update": {
+                "command": "sudo apt-get update"
+              }
+            }
+          },
+          "mysql_install": {
+            "packages": {
+              "apt": {
+                "mysql-server": [
+
+                ]
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "mysql": {
+                  "enabled": true,
+                  "ensureRunning": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "WebLaunchConfiguration": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "ImageId": {
+          "Ref": "WebLaunchConfigurationImageId"
+        },
+        "InstanceType": {
+          "Ref": "WebLaunchConfigurationInstanceType"
+        },
+        "KeyName": {
+          "Ref": "KeyName"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "WebSecurityGroup"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "apt-get update\n",
+                "apt-get -y install python-setuptools\n",
+                "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n",
+                "cfn-init -v --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " -s ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " -r WebLaunchConfiguration",
+                "\n",
+                "cfn-signal -e $? --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " --stack ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " --resource ",
+                "WebAutoScalingGroup",
+                "\n"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "configSets": {
+            "default": [
+              "update",
+              "apache_install",
+              "php_install"
+            ]
+          },
+          "update": {
+            "commands": {
+              "00_get_update": {
+                "command": "sudo apt-get update"
+              }
+            }
+          },
+          "apache_install": {
+            "packages": {
+              "apt": {
+                "apache2": [
+
+                ]
+              }
+            },
+            "services": {
+              "sysvinit": {
+                "apache2": {
+                  "enabled": true,
+                  "ensureRunning": true
+                }
+              }
+            }
+          },
+          "php_install": {
+            "packages": {
+              "apt": {
+                "php5": [
+
+                ],
+                "php5-mysql": [
+
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "DbAutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "AvailabilityZones": {
+          "Fn::GetAZs": ""
+        },
+        "LaunchConfigurationName": {
+          "Ref": "DbLaunchConfiguration"
+        },
+        "MaxSize": {
+          "Ref": "DbAutoScalingGroupSize"
+        },
+        "MinSize": {
+          "Ref": "DbAutoScalingGroupSize"
+        },
+        "DesiredCapacity": {
+          "Ref": "DbAutoScalingGroupSize"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "AWS::StackName"
+                  },
+                  "db"
+                ]
+              ]
+            },
+            "PropagateAtLaunch": "true"
+          }
+        ]
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Count": 1,
+          "Timeout": "PT15M"
+        }
+      }
+    },
+    "WebAutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "AvailabilityZones": {
+          "Fn::GetAZs": ""
+        },
+        "LaunchConfigurationName": {
+          "Ref": "WebLaunchConfiguration"
+        },
+        "MaxSize": {
+          "Ref": "WebAutoScalingGroupSize"
+        },
+        "MinSize": {
+          "Ref": "WebAutoScalingGroupSize"
+        },
+        "DesiredCapacity": {
+          "Ref": "WebAutoScalingGroupSize"
+        },
+        "LoadBalancerNames": [
+          {
+            "Ref": "WebAutoScalingGroupLoadBalancerResourceName"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "AWS::StackName"
+                  },
+                  "web"
+                ]
+              ]
+            },
+            "PropagateAtLaunch": "true"
+          }
+        ]
+      },
+      "CreationPolicy": {
+        "ResourceSignal": {
+          "Count": 1,
+          "Timeout": "PT15M"
+        }
+      }
+    }
+  },
+  "Description": "Build 1:1 Apache: Mysql ec2instances",
+  "Outputs": {
+    "DbWebSecurityGroupIngressPort": {
+      "Description": "The Port number for the SecurityGroupIngress rule",
+      "Value": {
+        "Ref": "DbWebSecurityGroupIngressPort"
+      }
+    },
+    "DbWebSecurityGroupIngressIpProtocol": {
+      "Description": "The IpProtocol for the SecurityGroupIngress rule",
+      "Value": {
+        "Ref": "DbWebSecurityGroupIngressIpProtocol"
+      }
+    },
+    "WebPublicSecurityGroupIngressPort": {
+      "Description": "The Port number for the SecurityGroupIngress rule",
+      "Value": {
+        "Ref": "WebPublicSecurityGroupIngressPort"
+      }
+    },
+    "WebPublicSecurityGroupIngressIpProtocol": {
+      "Description": "The IpProtocol for the SecurityGroupIngress rule",
+      "Value": {
+        "Ref": "WebPublicSecurityGroupIngressIpProtocol"
+      }
+    },
+    "DbLaunchConfigurationImageId": {
+      "Description": "The ImageID for the LaunchConfiguration resource",
+      "Value": {
+        "Ref": "DbLaunchConfigurationImageId"
+      }
+    },
+    "DbLaunchConfigurationInstanceType": {
+      "Description": "The InstanceType for the LaunchConfiguration resource",
+      "Value": {
+        "Ref": "DbLaunchConfigurationInstanceType"
+      }
+    },
+    "KeyName": {
+      "Description": "The KeyName for the LaunchConfiguration resource",
+      "Value": {
+        "Ref": "KeyName"
+      }
+    },
+    "WebLaunchConfigurationImageId": {
+      "Description": "The ImageID for the LaunchConfiguration resource",
+      "Value": {
+        "Ref": "WebLaunchConfigurationImageId"
+      }
+    },
+    "WebLaunchConfigurationInstanceType": {
+      "Description": "The InstanceType for the LaunchConfiguration resource",
+      "Value": {
+        "Ref": "WebLaunchConfigurationInstanceType"
+      }
+    },
+    "DbAutoScalingGroupSize": {
+      "Description": "The desired size of the AutoScalingGroup",
+      "Value": {
+        "Ref": "DbAutoScalingGroupSize"
+      }
+    },
+    "WebAutoScalingGroupSize": {
+      "Description": "The desired size of the AutoScalingGroup",
+      "Value": {
+        "Ref": "WebAutoScalingGroupSize"
+      }
+    },
+    "WebAutoScalingGroupLoadBalancerResourceName": {
+      "Description": "The LoadBalancer resource name to associate with the AUtoScalingGroup",
+      "Value": {
+        "Ref": "WebAutoScalingGroupLoadBalancerResourceName"
+      }
+    }
+  }
+}
