@@ -1,0 +1,4 @@
+desc "Says 'Hello, Rake'"
+task :default do 
+	puts 'Hello,Rake'
+end 
