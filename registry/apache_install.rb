@@ -1,5 +1,5 @@
 # Registry: apache_install
-# Description: A command to install php as defined in an
+# Description: A command to install php and apache as defined in an
 # AWS::AutoScalingGroup::LaunchConfiguration resource. This registry
 # needs to be inserted into such a resource to work properly.
 SparkleFormation::Registry.register(:apache_install) do
